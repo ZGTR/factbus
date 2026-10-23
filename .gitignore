@@ -1,0 +1,13 @@
+.venv/
+.venv-*/
+__pycache__/
+*.pyc
+.pytest_cache/
+.DS_Store
+*.egg-info/
+dist/
+.terraform/
+.terraform.lock.hcl
+*.tfstate*
+.venv-matrix-*/
+examples/hello/.build/

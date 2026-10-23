@@ -1,0 +1,46 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "factbus"
+version = "0.1.0.dev0"
+description = "Event-driven services on AWS out of the box: transactional outbox to EventBridge, SQS consumers that apply each event once, and a guard for side effects that must not repeat"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.12"
+# Ranges, not pins: this is a library. The core needs only boto3; the SQL outbox and
+# inbox are the `sql` extra. SQLAlchemy 1.4 and 2.0 are both supported
+# (scripts/test_sqlalchemy_matrix.sh runs both); alembic 1.17+ no longer imports on
+# SQLAlchemy 1.4, so it is capped below that.
+dependencies = [
+    "boto3>=1.34",
+]
+
+[project.optional-dependencies]
+sql = ["SQLAlchemy>=1.4.36,<2.1", "alembic>=1.13,<1.17"]
+postgres = ["factbus[sql]", "psycopg[binary]>=3.1"]
+mysql = ["factbus[sql]", "PyMySQL>=1.1", "cryptography>=42"]
+dev = [
+    "factbus[sql]",
+    "pytest>=8",
+    "moto[dynamodb,events,sqs]>=5",
+    "psycopg[binary]>=3.1",
+    "PyMySQL>=1.1",
+    "cryptography>=42",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/factbus"]
+
+[tool.pytest.ini_options]
+# Unit tests run by default. The integration suite needs PostgreSQL 16, MySQL 8.0 and
+# LocalStack, and FAILS (never skips) when their URLs are absent -- run it explicitly:
+#   pytest tests/integration
+testpaths = ["tests/unit"]
+addopts = "-ra --strict-markers"
+filterwarnings = [
+    # botocore's own signer still calls datetime.utcnow(); not ours to fix.
+    "ignore:datetime.datetime.utcnow:DeprecationWarning:botocore.*",
+]
+pythonpath = ["src", "."]
