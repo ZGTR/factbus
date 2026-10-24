@@ -17,6 +17,7 @@ A negative answer is never cached: the next caller asks again.
 
 from __future__ import annotations
 
+import logging
 from datetime import datetime, timedelta
 
 from factbus.ports import BusUnavailable, Clock, EventBus, Metrics
@@ -26,6 +27,8 @@ __all__ = ["ON_COMMIT_MAX_AGE", "BusReadiness"]
 ON_COMMIT_MAX_AGE = timedelta(seconds=60)
 
 BUS_UNCONFIRMED_METRIC = "OutboxBusUnconfirmed"
+
+log = logging.getLogger(__name__)
 
 
 class BusReadiness:
@@ -54,7 +57,10 @@ class BusReadiness:
         """Ask the bus, uncached. Used at startup, by readiness probes and by each sweep."""
         try:
             exists = self._bus.bus_exists()
-        except BusUnavailable:
+        except BusUnavailable as error:
+            # Say why: a role missing events:DescribeEventBus looks exactly like a
+            # deleted bus in the metric, and defers every publish.
+            log.warning("event bus not confirmed (%s): %s", error.code, error)
             exists = False
         if exists:
             self._last_confirmed_at = self._clock()
