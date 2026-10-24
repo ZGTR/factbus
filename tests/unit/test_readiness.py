@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 from datetime import timedelta
 
 import pytest
 
 from factbus.application import BusReadiness
+from factbus.ports import BusUnavailable
 from tests.support import CountingMetrics, ManualClock, ScriptedBus
 
 
@@ -56,3 +58,21 @@ def test_confirm_now_is_never_cached():
 def test_a_cache_longer_than_sixty_seconds_is_refused():
     with pytest.raises(ValueError):
         BusReadiness(ScriptedBus(), ManualClock(), CountingMetrics(), max_age=timedelta(seconds=61))
+
+
+class _DeniedBus(ScriptedBus):
+    def bus_exists(self) -> bool:
+        self.describe_calls += 1
+        raise BusUnavailable("not authorized to perform: events:DescribeEventBus", code="AccessDeniedException")
+
+
+def test_an_unconfirmable_bus_logs_why(caplog):
+    # A role without events:DescribeEventBus defers every publish. The metric alone
+    # cannot tell that from a deleted bus, so the reason must reach the log.
+    metrics = CountingMetrics()
+    readiness = BusReadiness(_DeniedBus(), ManualClock(), metrics)
+    with caplog.at_level(logging.WARNING, logger="factbus.application.readiness"):
+        assert not readiness.confirm_now()
+    assert metrics.counts["OutboxBusUnconfirmed"] == 1
+    assert "AccessDeniedException" in caplog.text
+    assert "events:DescribeEventBus" in caplog.text
