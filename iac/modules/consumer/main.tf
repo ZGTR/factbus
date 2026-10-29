@@ -1,7 +1,8 @@
 # One consumer's whole AWS side in one module block: an EventBridge rule on the
-# producer's bus, the queue and DLQ it delivers to, the Lambda event source mapping that
-# drains the queue, three alarms and, optionally, the DynamoDB inbox table the kit uses
-# to apply each event once. No VPC, subnet, NAT gateway or database instance: the inbox
+# producer's bus, the queue and DLQ it delivers to, the delivery DLQ that catches events
+# the rule could not put on the queue, the Lambda event source mapping that drains the
+# queue, four alarms and, optionally, the DynamoDB inbox table the kit uses to apply each
+# event once. No VPC, subnet, NAT gateway or database instance: the inbox
 # is DynamoDB, so a consumer needs no network plumbing.
 #
 # One bus and one rule per consumer, so a caller writes about ten lines. A consumer of
@@ -26,10 +27,48 @@ resource "aws_cloudwatch_event_rule" "this" {
   })
 }
 
+# Two failure boundaries, two DLQs. EventBridge retries a failed put to the queue (a
+# denied queue policy, a deleted queue) and then parks the event on the delivery DLQ;
+# the queue's redrive moves a message the handler keeps failing to the processing DLQ.
 resource "aws_cloudwatch_event_target" "this" {
   rule           = aws_cloudwatch_event_rule.this.name
   event_bus_name = var.bus_name
   arn            = aws_sqs_queue.this.arn
+
+  retry_policy {
+    maximum_event_age_in_seconds = var.delivery_max_event_age_seconds
+    maximum_retry_attempts       = var.delivery_max_retry_attempts
+  }
+
+  dead_letter_config {
+    arn = aws_sqs_queue.delivery_dlq.arn
+  }
+
+  # EventBridge dead-letters at once when it lacks permission, so the target must not
+  # go live before either queue admits the rule.
+  depends_on = [aws_sqs_queue_policy.this, aws_sqs_queue_policy.delivery_dlq]
+}
+
+resource "aws_sqs_queue" "delivery_dlq" {
+  name                      = "${var.name}-delivery-dlq"
+  message_retention_seconds = var.retention_seconds
+}
+
+# EventBridge writes the delivery DLQ as the rule, so the grant names the rule, as on
+# the queue.
+resource "aws_sqs_queue_policy" "delivery_dlq" {
+  queue_url = aws_sqs_queue.delivery_dlq.id
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid       = "AllowEventBridgeRuleDeadLetter"
+      Effect    = "Allow"
+      Principal = { Service = "events.amazonaws.com" }
+      Action    = "sqs:SendMessage"
+      Resource  = aws_sqs_queue.delivery_dlq.arn
+      Condition = { ArnEquals = { "aws:SourceArn" = aws_cloudwatch_event_rule.this.arn } }
+    }]
+  })
 }
 
 resource "aws_sqs_queue" "dlq" {
@@ -83,6 +122,21 @@ resource "aws_cloudwatch_metric_alarm" "dlq_visible" {
   namespace           = "AWS/SQS"
   metric_name         = "ApproximateNumberOfMessagesVisible"
   dimensions          = { QueueName = aws_sqs_queue.dlq.name }
+  statistic           = "Maximum"
+  period              = 60
+  evaluation_periods  = 1
+  threshold           = 0
+  comparison_operator = "GreaterThanThreshold"
+  treat_missing_data  = "notBreaching"
+  alarm_actions       = local.alarm_actions
+}
+
+resource "aws_cloudwatch_metric_alarm" "delivery_dlq_visible" {
+  alarm_name          = "${var.name}-delivery-dlq-visible"
+  alarm_description   = "EventBridge could not deliver an event to ${var.name} and parked it on the delivery DLQ."
+  namespace           = "AWS/SQS"
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  dimensions          = { QueueName = aws_sqs_queue.delivery_dlq.name }
   statistic           = "Maximum"
   period              = 60
   evaluation_periods  = 1

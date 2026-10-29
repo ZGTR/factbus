@@ -18,6 +18,14 @@ output "dlq_url" {
   value = aws_sqs_queue.dlq.id
 }
 
+output "delivery_dlq_arn" {
+  value = aws_sqs_queue.delivery_dlq.arn
+}
+
+output "delivery_dlq_url" {
+  value = aws_sqs_queue.delivery_dlq.id
+}
+
 output "mapping_uuid" {
   description = "The `<id>` in docs/kill-switch-runbook.md's disable and re-enable commands."
   value       = aws_lambda_event_source_mapping.this.uuid
@@ -39,6 +47,7 @@ output "consumer_policy_json" {
 output "alarm_names" {
   value = [
     aws_cloudwatch_metric_alarm.dlq_visible.alarm_name,
+    aws_cloudwatch_metric_alarm.delivery_dlq_visible.alarm_name,
     aws_cloudwatch_metric_alarm.queue_age.alarm_name,
     aws_cloudwatch_metric_alarm.lambda_errors.alarm_name,
   ]

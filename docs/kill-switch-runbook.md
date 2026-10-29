@@ -12,7 +12,7 @@ Set `enabled = false` on the consumer's module block and apply:
 
 ```hcl
 module "ledger" {
-  source  = "github.com/<org>/factbus//iac/modules/consumer"
+  source  = "github.com/ZGTR/mshaker-shared-events//iac/modules/consumer"
   # ...
   enabled = false
 }

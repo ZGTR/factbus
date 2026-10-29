@@ -1,8 +1,8 @@
 variable "name" {
-  description = "Base name for the rule, the queue (`<name>`), its DLQ (`<name>-dlq`), the alarms and, by default, the inbox table (`<name>-inbox`)."
+  description = "Base name for the rule, the queue (`<name>`), its DLQ (`<name>-dlq`), the delivery DLQ (`<name>-delivery-dlq`), the alarms and, by default, the inbox table (`<name>-inbox`)."
   type        = string
   validation {
-    # SQS allows 80 characters; `-dlq` and `-dlq-visible` need room.
+    # SQS allows 80 characters; `-delivery-dlq` needs room.
     condition     = can(regex("^[A-Za-z0-9_-]{1,64}$", var.name))
     error_message = "name: 1 to 64 letters, digits, '-' or '_' (it names an SQS queue and an EventBridge rule)."
   }
@@ -78,6 +78,26 @@ variable "retention_seconds" {
   description = "Queue and DLQ retention. 14 days, the SQS maximum."
   type        = number
   default     = 1209600
+}
+
+variable "delivery_max_retry_attempts" {
+  description = "EventBridge retries of a failed put to the queue before the event goes to the delivery DLQ (0-185)."
+  type        = number
+  default     = 185
+  validation {
+    condition     = var.delivery_max_retry_attempts >= 0 && var.delivery_max_retry_attempts <= 185
+    error_message = "delivery_max_retry_attempts: 0 to 185, the EventBridge range."
+  }
+}
+
+variable "delivery_max_event_age_seconds" {
+  description = "How long EventBridge keeps retrying a failed put to the queue before the delivery DLQ (60-86400)."
+  type        = number
+  default     = 86400
+  validation {
+    condition     = var.delivery_max_event_age_seconds >= 60 && var.delivery_max_event_age_seconds <= 86400
+    error_message = "delivery_max_event_age_seconds: 60 to 86400, the EventBridge range."
+  }
 }
 
 variable "age_alarm_threshold_seconds" {

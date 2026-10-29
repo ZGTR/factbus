@@ -1,4 +1,9 @@
-# factbus
+# Shared Events (factbus)
+
+`ZGTR/mshaker-shared-events` is the repository; `factbus` is the Python package it ships
+(`pip install "factbus @ git+https://github.com/ZGTR/mshaker-shared-events.git@<sha>"`,
+`import factbus`). The repository was named `factbus` until October 2026; GitHub
+redirects the old URL.
 
 Event-driven services on AWS without building the plumbing. A producer publishes facts
 from its own database transaction. Each consumer applies every event exactly once. A
@@ -19,18 +24,24 @@ DynamoDB. It adds no broker, no cluster and no VPC.
                                                                        └──────────────────┘
 ```
 
+Each consumer gets its own rule, queue and inbox, so several services consume the same
+fact independently and one stopping leaves the others running. There are two DLQs per
+consumer: the **delivery DLQ** catches an event EventBridge could not put on the queue
+(after its retry policy); the **processing DLQ** catches a message the handler kept
+failing. Both alarm.
+
 ## Quickstart
 
 ### 1. Infrastructure
 
 ```hcl
 module "bus" {
-  source = "github.com/<org>/factbus//iac/modules/bus"
+  source = "github.com/ZGTR/mshaker-shared-events//iac/modules/bus"
   name   = "events"
 }
 
 module "ledger" {                       # one block per consumer
-  source       = "github.com/<org>/factbus//iac/modules/consumer"
+  source       = "github.com/ZGTR/mshaker-shared-events//iac/modules/consumer"
   name         = "ledger"
   bus_name     = module.bus.bus_name
   sources      = ["shop.orders"]
@@ -107,7 +118,7 @@ failure.
 docker compose up -d --wait        # LocalStack 3.8, PostgreSQL 16, MySQL 8.0
 make test                          # unit suite, no Docker needed
 make integration                   # real engines + LocalStack
-make e2e                           # examples/hello: publish -> exactly once -> replay -> DLQ
+make e2e                           # examples/hello: two consumers, once each, kill switch, DLQ
 ```
 
 ## What factbus guarantees, and what it does not
@@ -119,6 +130,7 @@ make e2e                           # examples/hello: publish -> exactly once -> 
 | An older version never overwrites a newer one | optional `version_of`, conditional write |
 | A side effect runs at most once per key | `once`: claim before the call, unknown outcomes are final |
 | One poison message does not block its batch | `ReportBatchItemFailures` plus per-message backoff |
+| An event EventBridge cannot deliver is kept | target retry policy, then the consumer's delivery DLQ |
 
 It does **not** promise global ordering, exactly-once delivery on the wire (it dedupes
 instead), or that an `Unknown` side effect happened. Each of those is a stated decision;
@@ -128,7 +140,7 @@ see [`docs/design.md`](docs/design.md).
 
 | Option | What you still build |
 | --- | --- |
-| Raw EventBridge + SQS | outbox, sweeper, inbox, partial batch failure, backoff, DLQ alarms, IAM per source |
+| Raw EventBridge + SQS | outbox, sweeper, inbox, partial batch failure, backoff, both DLQs and their alarms, IAM per source |
 | AWS Lambda Powertools (batch, idempotency) | outbox and IaC. Its idempotency record expires, so a crash mid-call can repeat the side effect |
 | Kafka / MSK, RabbitMQ | a broker to run, plus outbox and inbox |
 | Debezium CDC | Kafka Connect and a connector per database |
