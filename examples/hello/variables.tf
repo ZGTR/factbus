@@ -1,3 +1,13 @@
+variable "prefix" {
+  description = "Prefix for every resource name, so several copies of the example (or a sandbox run beside other stacks) do not collide."
+  type        = string
+  default     = "hello"
+  validation {
+    condition     = can(regex("^[a-z0-9-]{1,40}$", var.prefix))
+    error_message = "prefix: 1 to 40 lowercase letters, digits or '-'."
+  }
+}
+
 variable "localstack_endpoint" {
   description = "LocalStack edge URL, e.g. http://localhost:4566. Null: the provider talks to real AWS with the caller's own credentials and region."
   type        = string

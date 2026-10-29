@@ -1,4 +1,5 @@
-"""hello-ledger: the example consumer.
+"""The example consumer. examples/hello deploys it twice (`<prefix>-ledger` and
+`<prefix>-audit`), each with its own queue, inbox and ledger table.
 
 Each `hello.said` event writes one ledger item, in the same DynamoDB transaction as the
 inbox record, so a redelivered or replayed copy of the event writes nothing. An event
@@ -29,7 +30,7 @@ def _now() -> datetime:
     inbox=DynamoInbox.from_env,
     types=["hello.said"],
     schedule=_SCHEDULE,
-    service="hello-ledger",
+    service=os.environ.get("HELLO_SERVICE", "hello-ledger"),
 )
 def handler(event: Event, tx) -> None:
     if event.data.get("poison") is True:

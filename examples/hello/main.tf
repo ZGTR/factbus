@@ -1,5 +1,7 @@
-# factbus's runnable example: one producer source, one bus, one consumer Lambda that
-# writes a ledger row per event, applied once through the DynamoDB inbox.
+# factbus's runnable example: one producer source, one bus and two independent consumers
+# of the same event. Each consumer has its own rule, queue, DLQs, inbox and Lambda, and
+# writes its own ledger row per event, applied once through its own DynamoDB inbox. One
+# consumer stopping or failing leaves the other running.
 #
 #   LocalStack:  tofu apply -var localstack_endpoint=http://localhost:4566
 #   Real AWS:    tofu apply   (no endpoint; your credentials and region decide)
@@ -27,6 +29,8 @@ locals {
   event_source = "example.hello"
   event_type   = "hello.said"
   src_dir      = "${path.module}/../../src"
+  # Two consumers of the same event, identical except for their names and state.
+  consumers = toset(["ledger", "audit"])
 }
 
 provider "aws" {
@@ -56,7 +60,7 @@ provider "aws" {
 
 module "bus" {
   source = "../../iac/modules/bus"
-  name   = "hello-bus"
+  name   = "${var.prefix}-bus"
 }
 
 # No sweeper here: the e2e script publishes straight to the bus. A service with an SQL
@@ -67,10 +71,11 @@ module "producer" {
   event_source = local.event_source
 }
 
-# The ledger the handler writes: one item per applied event, `sk` unique per apply, so a
-# second apply of the same event would show up as a second item.
+# Each consumer's ledger: one item per applied event, `sk` unique per apply, so a second
+# apply of the same event would show up as a second item.
 resource "aws_dynamodb_table" "ledger" {
-  name         = "hello-ledger"
+  for_each     = local.consumers
+  name         = "${var.prefix}-${each.key}"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "pk"
   range_key    = "sk"
@@ -87,10 +92,10 @@ resource "aws_dynamodb_table" "ledger" {
 }
 
 # handler.py plus the factbus package. boto3, factbus's only runtime dependency on this
-# path, ships with the python3.12 Lambda runtime.
+# path, ships with the python3.12 Lambda runtime. Both consumers run this one artifact.
 data "archive_file" "hello" {
   type        = "zip"
-  output_path = "${path.module}/.build/hello-ledger.zip"
+  output_path = "${path.module}/.build/hello.zip"
 
   source {
     content  = file("${path.module}/handler.py")
@@ -107,7 +112,8 @@ data "archive_file" "hello" {
 }
 
 resource "aws_iam_role" "hello" {
-  name = "hello-ledger"
+  for_each = local.consumers
+  name     = "${var.prefix}-${each.key}"
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
     Statement = [{
@@ -119,10 +125,11 @@ resource "aws_iam_role" "hello" {
 }
 
 # The handler's own writes and logs. The queue and inbox grants come from the consumer
-# module (`role_name` below).
+# module (`role_name` below). Neither role can touch the other consumer's tables.
 resource "aws_iam_role_policy" "hello" {
-  name = "hello-ledger-own"
-  role = aws_iam_role.hello.name
+  for_each = local.consumers
+  name     = "${var.prefix}-${each.key}-own"
+  role     = aws_iam_role.hello[each.key].name
   policy = jsonencode({
     Version = "2012-10-17"
     Statement = [
@@ -130,13 +137,13 @@ resource "aws_iam_role_policy" "hello" {
         Sid      = "WriteLedger"
         Effect   = "Allow"
         Action   = ["dynamodb:PutItem"]
-        Resource = aws_dynamodb_table.ledger.arn
+        Resource = aws_dynamodb_table.ledger[each.key].arn
       },
       {
         Sid      = "Logs"
         Effect   = "Allow"
-        Action   = ["logs:CreateLogGroup", "logs:CreateLogStream", "logs:PutLogEvents"]
-        Resource = "*"
+        Action   = ["logs:CreateLogStream", "logs:PutLogEvents"]
+        Resource = "${aws_cloudwatch_log_group.hello[each.key].arn}:*"
       },
     ]
   })
@@ -144,13 +151,15 @@ resource "aws_iam_role_policy" "hello" {
 
 # Owned here so `tofu destroy` removes it; Lambda would otherwise create it unmanaged.
 resource "aws_cloudwatch_log_group" "hello" {
-  name              = "/aws/lambda/hello-ledger"
+  for_each          = local.consumers
+  name              = "/aws/lambda/${var.prefix}-${each.key}"
   retention_in_days = 14
 }
 
 resource "aws_lambda_function" "hello" {
-  function_name    = "hello-ledger"
-  role             = aws_iam_role.hello.arn
+  for_each         = local.consumers
+  function_name    = "${var.prefix}-${each.key}"
+  role             = aws_iam_role.hello[each.key].arn
   runtime          = "python3.12"
   handler          = "handler.handler"
   filename         = data.archive_file.hello.output_path
@@ -161,23 +170,34 @@ resource "aws_lambda_function" "hello" {
   environment {
     variables = merge(
       {
-        FACTBUS_INBOX_TABLE = module.consumer.inbox_table_name
-        LEDGER_TABLE      = aws_dynamodb_table.ledger.name
+        FACTBUS_INBOX_TABLE = "${var.prefix}-${each.key}-inbox"
+        LEDGER_TABLE        = aws_dynamodb_table.ledger[each.key].name
+        HELLO_SERVICE       = "${var.prefix}-${each.key}"
       },
       var.test_backoff_factor == null ? {} : { HELLO_TEST_BACKOFF_FACTOR = tostring(var.test_backoff_factor) },
     )
   }
 }
 
-# The whole consumer: rule, queue, DLQ, event source mapping, alarms, inbox table.
+# The whole consumer, once per consumer: rule, queue, DLQ, delivery DLQ, event source
+# mapping, alarms, inbox table.
 module "consumer" {
   source             = "../../iac/modules/consumer"
-  name               = "hello-ledger"
+  for_each           = local.consumers
+  name               = "${var.prefix}-${each.key}"
   bus_name           = module.bus.bus_name
   sources            = [local.event_source]
   event_types        = [local.event_type]
-  function_arn       = aws_lambda_function.hello.arn
-  role_name          = aws_iam_role.hello.name
+  function_arn       = aws_lambda_function.hello[each.key].arn
+  role_name          = aws_iam_role.hello[each.key].name
   max_receive_count  = 3
   create_inbox_table = true
+  # Named here rather than read back from the module, which would make the function
+  # depend on the module that depends on the function.
+  inbox_table_name = "${var.prefix}-${each.key}-inbox"
+
+  # Short so the e2e's delivery-DLQ arm finishes in minutes; a real consumer keeps the
+  # module defaults (185 attempts over 24 h).
+  delivery_max_retry_attempts    = 0
+  delivery_max_event_age_seconds = 60
 }

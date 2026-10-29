@@ -18,6 +18,14 @@ override_resource {
 }
 
 override_resource {
+  target = aws_sqs_queue.delivery_dlq
+  values = {
+    arn = "arn:aws:sqs:eu-west-1:111111111111:event-ledger-delivery-dlq"
+    id  = "https://sqs.eu-west-1.amazonaws.com/111111111111/event-ledger-delivery-dlq"
+  }
+}
+
+override_resource {
   target = aws_cloudwatch_event_rule.this
   values = { arn = "arn:aws:events:eu-west-1:111111111111:rule/example-events/event-ledger" }
 }
@@ -77,6 +85,70 @@ run "queue_policy_admits_only_the_rule" {
     )
     error_message = "the policy must grant events.amazonaws.com sqs:SendMessage on this queue only, with no wildcard"
   }
+}
+
+run "failed_delivery_goes_to_the_delivery_dlq" {
+  command = plan
+  assert {
+    condition     = one(aws_cloudwatch_event_target.this.dead_letter_config).arn == "arn:aws:sqs:eu-west-1:111111111111:event-ledger-delivery-dlq"
+    error_message = "the target must dead-letter to this module's delivery DLQ"
+  }
+  assert {
+    condition     = aws_sqs_queue.delivery_dlq.name == "event-ledger-delivery-dlq" && aws_sqs_queue.delivery_dlq.arn != aws_sqs_queue.dlq.arn
+    error_message = "the delivery DLQ must be its own queue, distinct from the processing DLQ"
+  }
+  assert {
+    condition = (
+      one(aws_cloudwatch_event_target.this.retry_policy).maximum_retry_attempts == 185
+      && one(aws_cloudwatch_event_target.this.retry_policy).maximum_event_age_in_seconds == 86400
+    )
+    error_message = "the target retry policy must default to the EventBridge maximum (185 attempts, 24 h)"
+  }
+  assert {
+    condition = (
+      aws_cloudwatch_metric_alarm.delivery_dlq_visible.dimensions["QueueName"] == "event-ledger-delivery-dlq"
+      && aws_cloudwatch_metric_alarm.delivery_dlq_visible.threshold == 0
+    )
+    error_message = "a visible delivery DLQ message must alarm"
+  }
+}
+
+run "delivery_dlq_policy_admits_only_the_rule" {
+  command = plan
+  assert {
+    condition = (
+      length(jsondecode(aws_sqs_queue_policy.delivery_dlq.policy).Statement) == 1
+      && one(jsondecode(aws_sqs_queue_policy.delivery_dlq.policy).Statement).Principal == { Service = "events.amazonaws.com" }
+      && one(jsondecode(aws_sqs_queue_policy.delivery_dlq.policy).Statement).Action == "sqs:SendMessage"
+      && one(jsondecode(aws_sqs_queue_policy.delivery_dlq.policy).Statement).Resource == "arn:aws:sqs:eu-west-1:111111111111:event-ledger-delivery-dlq"
+      && one(jsondecode(aws_sqs_queue_policy.delivery_dlq.policy).Statement).Condition == { ArnEquals = { "aws:SourceArn" = "arn:aws:events:eu-west-1:111111111111:rule/example-events/event-ledger" } }
+      && !strcontains(aws_sqs_queue_policy.delivery_dlq.policy, "*")
+    )
+    error_message = "the delivery DLQ policy must admit only this rule: ${aws_sqs_queue_policy.delivery_dlq.policy}"
+  }
+}
+
+run "delivery_retry_policy_follows_variables" {
+  command = plan
+  variables {
+    delivery_max_retry_attempts    = 0
+    delivery_max_event_age_seconds = 60
+  }
+  assert {
+    condition = (
+      one(aws_cloudwatch_event_target.this.retry_policy).maximum_retry_attempts == 0
+      && one(aws_cloudwatch_event_target.this.retry_policy).maximum_event_age_in_seconds == 60
+    )
+    error_message = "the retry policy must follow delivery_max_retry_attempts and delivery_max_event_age_seconds"
+  }
+}
+
+run "delivery_retry_out_of_range_is_refused" {
+  command = plan
+  variables {
+    delivery_max_retry_attempts = 186
+  }
+  expect_failures = [var.delivery_max_retry_attempts]
 }
 
 run "redrive_defaults_to_ten_receives" {
@@ -147,6 +219,7 @@ run "alarms_notify_the_topic_when_given" {
       aws_cloudwatch_metric_alarm.dlq_visible.alarm_actions == toset(["arn:aws:sns:eu-west-1:111111111111:ops"])
       && aws_cloudwatch_metric_alarm.queue_age.alarm_actions == toset(["arn:aws:sns:eu-west-1:111111111111:ops"])
       && aws_cloudwatch_metric_alarm.lambda_errors.alarm_actions == toset(["arn:aws:sns:eu-west-1:111111111111:ops"])
+      && aws_cloudwatch_metric_alarm.delivery_dlq_visible.alarm_actions == toset(["arn:aws:sns:eu-west-1:111111111111:ops"])
     )
     error_message = "every alarm must notify alarm_topic_arn"
   }
