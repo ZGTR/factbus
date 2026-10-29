@@ -101,11 +101,31 @@ class Consumer:
                 return True
         return False
 
-    def set_mapping(self, enabled: bool) -> bool:
+    def mapping_state(self) -> str | None:
+        try:
+            return self.lam.get_event_source_mapping(UUID=self.out["mapping_uuid"])["State"]
+        except Exception:  # a transient read failure is not a state; poll again
+            return None
+
+    def set_mapping(self, enabled: bool, timeout: float = 180.0) -> bool:
+        """Ask for the state until the mapping reports it. Lambda refuses an update while a
+        previous one is still transitioning (ResourceConflictException), so retry rather
+        than give up, which matters most when this restores a mapping after a failure."""
         uuid = self.out["mapping_uuid"]
-        self.lam.update_event_source_mapping(UUID=uuid, Enabled=enabled)
         want = "Enabled" if enabled else "Disabled"
-        ok, _ = wait_for(lambda: self.lam.get_event_source_mapping(UUID=uuid)["State"] == want, 120, 2.0)
+
+        def settled() -> bool:
+            state = self.mapping_state()
+            if state == want:
+                return True
+            if state in ("Enabled", "Disabled"):
+                try:
+                    self.lam.update_event_source_mapping(UUID=uuid, Enabled=enabled)
+                except Exception:  # conflict or throttle: the next poll retries
+                    pass
+            return False
+
+        ok, _ = wait_for(settled, timeout, 2.0)
         return ok
 
     def queue_policy(self) -> str:
@@ -277,9 +297,10 @@ def main() -> int:
             check(f"delivery[{healthy.key}]: healthy consumer applied", ok, f"after {took:.1f}s")
         finally:
             blocked.set_queue_policy(policy)
-        check(f"delivery[{blocked.key}]: queue policy restored", blocked.queue_policy() == policy, "")
-        # The restored policy also takes up to a minute to apply; publishing sooner could
-        # send the next arm's event to the delivery DLQ.
+        # A policy change takes up to a minute to read back and to apply; publishing
+        # sooner could send the next arm's event to the delivery DLQ.
+        ok, took = wait_for(lambda: blocked.queue_policy() == policy, args.policy_settle, 2.0)
+        check(f"delivery[{blocked.key}]: queue policy restored", ok, f"after {took:.1f}s")
         time.sleep(args.policy_settle)
 
     # 5. poison -> each consumer's processing DLQ

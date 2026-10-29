@@ -43,6 +43,10 @@ resource "aws_cloudwatch_event_target" "this" {
   dead_letter_config {
     arn = aws_sqs_queue.delivery_dlq.arn
   }
+
+  # EventBridge dead-letters at once when it lacks permission, so the target must not
+  # go live before either queue admits the rule.
+  depends_on = [aws_sqs_queue_policy.this, aws_sqs_queue_policy.delivery_dlq]
 }
 
 resource "aws_sqs_queue" "delivery_dlq" {
