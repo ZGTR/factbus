@@ -1,4 +1,4 @@
-# factbus IaC modules
+# Shared Events (factbus) IaC modules
 
 Three OpenTofu/Terraform modules, one per role. None of them declares a provider: the
 root module that calls them sets region, credentials and, locally, the LocalStack
@@ -8,18 +8,18 @@ endpoints. The same module source therefore serves LocalStack and a real account
 | --- | --- | --- |
 | `modules/bus` | whoever owns the bus, once per environment | the EventBridge bus and a 30-day archive for replay (capped below the 35-day inbox retention) |
 | `modules/producer` | each producing service | an IAM policy allowing `PutEvents` under the service's own `source` only, plus the 1-minute sweeper schedule |
-| `modules/consumer` | each consuming service | the rule, queue, DLQ, event source mapping (with `ReportBatchItemFailures`), three alarms, the DynamoDB inbox table and the function's IAM policy |
+| `modules/consumer` | each consuming service | the rule, its target retry policy and delivery DLQ, the queue and its processing DLQ, event source mapping (with `ReportBatchItemFailures`), four alarms, the DynamoDB inbox table and the function's IAM policy |
 
 ## Smallest calls
 
 ```hcl
 module "bus" {
-  source = "github.com/<org>/factbus//iac/modules/bus"
+  source = "github.com/ZGTR/mshaker-shared-events//iac/modules/bus"
   name   = "events"
 }
 
 module "orders_producer" {
-  source               = "github.com/<org>/factbus//iac/modules/producer"
+  source               = "github.com/ZGTR/mshaker-shared-events//iac/modules/producer"
   bus_arn              = module.bus.bus_arn
   event_source         = "shop.orders"
   role_name            = aws_iam_role.orders.name
@@ -27,7 +27,7 @@ module "orders_producer" {
 }
 
 module "ledger" {
-  source          = "github.com/<org>/factbus//iac/modules/consumer"
+  source          = "github.com/ZGTR/mshaker-shared-events//iac/modules/consumer"
   name            = "ledger"
   bus_name        = module.bus.bus_name
   sources         = ["shop.orders"]
@@ -56,6 +56,12 @@ single table holds the inbox, the applied versions and `once` claims.
   `consumer_policy_json` / `policy_json` yourself in that case.
 - One bus per consumer module. A consumer of two buses instantiates the module twice,
   once per bus, with distinct `name`s.
+- A consumer's two DLQs mean different things. `<name>-delivery-dlq` holds events
+  EventBridge could not put on the queue (queue policy, deleted or KMS-locked queue)
+  after `delivery_max_retry_attempts` / `delivery_max_event_age_seconds` (defaults: the
+  EventBridge maximum, 185 attempts over 24 h). `<name>-dlq` holds messages the handler
+  failed `max_receive_count` times. Redrive the first back onto the queue once the
+  delivery fault is fixed; the inbox makes a redriven copy harmless.
 - Alarms notify nobody when `alarm_topic_arn` is null. They still exist and show state in
   the console.
 

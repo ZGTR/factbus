@@ -177,6 +177,13 @@ def main() -> int:
     parser.add_argument("--dlq-timeout", type=float, default=120.0)
     parser.add_argument("--settle", type=float, default=10.0, help="seconds to wait after the duplicate")
     parser.add_argument(
+        "--stop-settle",
+        type=float,
+        default=None,
+        help="seconds to let a disabled mapping's pollers finish in-flight receives before the "
+        "independent arm puts its event (default 5 on LocalStack, 90 on AWS)",
+    )
+    parser.add_argument(
         "--policy-settle",
         type=float,
         default=60.0,
@@ -185,6 +192,7 @@ def main() -> int:
     args = parser.parse_args()
 
     local = bool(args.endpoint)
+    stop_settle = args.stop_settle if args.stop_settle is not None else (5.0 if local else 90.0)
     stack = Stack(tofu_outputs(args.tf_dir), args.endpoint or None, args.region)
     consumers = stack.consumers
     mode = ", ".join(f"Lambda {c.out['function_name']}" for c in consumers.values())
@@ -229,6 +237,9 @@ def main() -> int:
     # 3. one consumer stopped; the other carries on, and the stopped one catches up once
     stopped, running = consumers[FIRST], consumers[SECOND]
     check(f"independent: {stopped.key} mapping disabled", stopped.set_mapping(False), stopped.out["mapping_uuid"])
+    # `Disabled` stops new polls; a receive already in flight still finishes
+    # (docs/kill-switch-runbook.md), so let it before putting the event.
+    time.sleep(stop_settle)
     alone = Event(type=kind, source=source, data={"text": "while stopped"})
     stack.put(alone)
     ok, took = wait_for(lambda: running.ledger_count(alone.id) >= 1, args.timeout)
