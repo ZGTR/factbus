@@ -201,3 +201,36 @@ module "consumer" {
   delivery_max_retry_attempts    = 0
   delivery_max_event_age_seconds = 60
 }
+
+# The example had one consumer before it had two. Its names are unchanged under the
+# default prefix, so a stack applied from the one-consumer version (`KEEP=1 make e2e`)
+# becomes the `ledger` consumer in place instead of being destroyed and recreated.
+moved {
+  from = aws_dynamodb_table.ledger
+  to   = aws_dynamodb_table.ledger["ledger"]
+}
+
+moved {
+  from = aws_iam_role.hello
+  to   = aws_iam_role.hello["ledger"]
+}
+
+moved {
+  from = aws_iam_role_policy.hello
+  to   = aws_iam_role_policy.hello["ledger"]
+}
+
+moved {
+  from = aws_cloudwatch_log_group.hello
+  to   = aws_cloudwatch_log_group.hello["ledger"]
+}
+
+moved {
+  from = aws_lambda_function.hello
+  to   = aws_lambda_function.hello["ledger"]
+}
+
+moved {
+  from = module.consumer
+  to   = module.consumer["ledger"]
+}

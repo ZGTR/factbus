@@ -236,18 +236,22 @@ def main() -> int:
 
     # 3. one consumer stopped; the other carries on, and the stopped one catches up once
     stopped, running = consumers[FIRST], consumers[SECOND]
-    check(f"independent: {stopped.key} mapping disabled", stopped.set_mapping(False), stopped.out["mapping_uuid"])
-    # `Disabled` stops new polls; a receive already in flight still finishes
-    # (docs/kill-switch-runbook.md), so let it before putting the event.
-    time.sleep(stop_settle)
-    alone = Event(type=kind, source=source, data={"text": "while stopped"})
-    stack.put(alone)
-    ok, took = wait_for(lambda: running.ledger_count(alone.id) >= 1, args.timeout)
-    check(f"independent: {running.key} applied while {stopped.key} stopped", ok, f"id={alone.id} after {took:.1f}s")
-    time.sleep(args.settle)
-    count = stopped.ledger_count(alone.id)
-    check(f"independent: {stopped.key} applied nothing while stopped", count == 0, f"items={count}")
-    check(f"independent: {stopped.key} mapping re-enabled", stopped.set_mapping(True), stopped.out["mapping_uuid"])
+    try:
+        check(f"independent: {stopped.key} mapping disabled", stopped.set_mapping(False), stopped.out["mapping_uuid"])
+        # `Disabled` stops new polls; a receive already in flight still finishes
+        # (docs/kill-switch-runbook.md), so let it before putting the event.
+        time.sleep(stop_settle)
+        alone = Event(type=kind, source=source, data={"text": "while stopped"})
+        stack.put(alone)
+        ok, took = wait_for(lambda: running.ledger_count(alone.id) >= 1, args.timeout)
+        check(f"independent: {running.key} applied while {stopped.key} stopped", ok, f"id={alone.id} after {took:.1f}s")
+        time.sleep(args.settle)
+        count = stopped.ledger_count(alone.id)
+        check(f"independent: {stopped.key} applied nothing while stopped", count == 0, f"items={count}")
+    finally:
+        # Re-enabled even when an arm above raised, so a failed run leaves no stopped consumer.
+        enabled = stopped.set_mapping(True)
+    check(f"independent: {stopped.key} mapping re-enabled", enabled, stopped.out["mapping_uuid"])
     ok, took = wait_for(lambda: stopped.ledger_count(alone.id) >= 1, args.timeout)
     count = stopped.ledger_count(alone.id)
     check(f"independent: {stopped.key} caught up once", ok and count == 1, f"items={count} after {took:.1f}s")
@@ -274,6 +278,9 @@ def main() -> int:
         finally:
             blocked.set_queue_policy(policy)
         check(f"delivery[{blocked.key}]: queue policy restored", blocked.queue_policy() == policy, "")
+        # The restored policy also takes up to a minute to apply; publishing sooner could
+        # send the next arm's event to the delivery DLQ.
+        time.sleep(args.policy_settle)
 
     # 5. poison -> each consumer's processing DLQ
     poison = Event(type=kind, source=source, data={"poison": True})
