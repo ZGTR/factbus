@@ -189,7 +189,7 @@ def main() -> int:
     parser.add_argument("--tf-dir", default=str(REPO / "examples" / "hello"))
     parser.add_argument(
         "--endpoint",
-        default=os.environ.get("LOCALSTACK_ENDPOINT", "http://localhost:4566"),
+        default=os.environ.get("LOCALSTACK_ENDPOINT", "http://localhost:4576"),
         help="LocalStack edge URL; pass '' for real AWS",
     )
     parser.add_argument("--region", default="us-east-1")

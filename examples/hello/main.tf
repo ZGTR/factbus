@@ -3,7 +3,7 @@
 # writes its own ledger row per event, applied once through its own DynamoDB inbox. One
 # consumer stopping or failing leaves the other running.
 #
-#   LocalStack:  tofu apply -var localstack_endpoint=http://localhost:4566
+#   LocalStack:  tofu apply -var localstack_endpoint=http://localhost:4576
 #   Real AWS:    tofu apply   (no endpoint; your credentials and region decide)
 #
 # No VPC, subnet, NAT gateway or database instance: the inbox and the ledger are

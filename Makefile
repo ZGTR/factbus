@@ -10,9 +10,9 @@
 # KEEP=1 make e2e leaves the stack applied; `make down` removes it later.
 
 PY                  ?= .venv/bin/python
-LOCALSTACK_ENDPOINT ?= http://localhost:4566
-FACTBUS_PG_URL        ?= postgresql+psycopg://factbus:factbus@localhost:5442/factbus
-FACTBUS_MYSQL_URL     ?= mysql+pymysql://factbus:factbus@localhost:3316/factbus
+LOCALSTACK_ENDPOINT ?= http://localhost:4576
+FACTBUS_PG_URL        ?= postgresql+psycopg://factbus:factbus@localhost:5452/factbus
+FACTBUS_MYSQL_URL     ?= mysql+pymysql://factbus:factbus@localhost:3326/factbus
 HELLO               := examples/hello
 HELLO_VARS          := -var localstack_endpoint=$(LOCALSTACK_ENDPOINT) -var test_backoff_factor=0.01
 E2E_ARGS            ?=

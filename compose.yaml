@@ -1,9 +1,9 @@
 # Local engines for the integration suite and the end-to-end example.
 #
 #   docker compose up -d --wait
-#   export FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5442/factbus
-#   export FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3316/factbus
-#   export LOCALSTACK_ENDPOINT=http://localhost:4566
+#   export FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5452/factbus
+#   export FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3326/factbus
+#   export LOCALSTACK_ENDPOINT=http://localhost:4576
 #
 # LocalStack is pinned to 3.8 by digest: the last Community line this kit was measured
 # against, and it needs no auth token. Newer LocalStack images need an account; the kit
@@ -17,7 +17,7 @@ services:
       SERVICES: "${LOCALSTACK_SERVICES:-events,sqs,dynamodb,lambda,iam,sts,logs,cloudwatch}"
       AWS_DEFAULT_REGION: us-east-1
     ports:
-      - "${FACTBUS_LOCALSTACK_PORT:-4566}:4566"
+      - "${FACTBUS_LOCALSTACK_PORT:-4576}:4566"
     volumes:
       - "/var/run/docker.sock:/var/run/docker.sock"
     healthcheck:
@@ -34,7 +34,7 @@ services:
       POSTGRES_DB: factbus
     mem_limit: 512m
     ports:
-      - "${FACTBUS_POSTGRES_PORT:-5442}:5432"
+      - "${FACTBUS_POSTGRES_PORT:-5452}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U factbus -d factbus"]
       interval: 3s
@@ -50,7 +50,7 @@ services:
       MYSQL_DATABASE: factbus
     mem_limit: 768m
     ports:
-      - "${FACTBUS_MYSQL_PORT:-3316}:3306"
+      - "${FACTBUS_MYSQL_PORT:-3326}:3306"
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -ufactbus -pfactbus --silent"]
       interval: 3s
