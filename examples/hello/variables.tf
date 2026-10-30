@@ -9,7 +9,7 @@ variable "prefix" {
 }
 
 variable "localstack_endpoint" {
-  description = "LocalStack edge URL, e.g. http://localhost:4566. Null: the provider talks to real AWS with the caller's own credentials and region."
+  description = "LocalStack edge URL, e.g. http://localhost:4576. Null: the provider talks to real AWS with the caller's own credentials and region."
   type        = string
   default     = null
 }

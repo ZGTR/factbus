@@ -45,7 +45,7 @@ single table holds the inbox, the applied versions and `once` claims.
 
 | | Local | Production |
 | --- | --- | --- |
-| Provider | `endpoints { events = sqs = dynamodb = lambda = iam = sts = cloudwatch = logs = "http://localhost:4566" }`, `skip_credentials_validation`, `skip_requesting_account_id`, `access_key = secret_key = "test"` | no `endpoints` block; region and the deploy role select the account |
+| Provider | `endpoints { events = sqs = dynamodb = lambda = iam = sts = cloudwatch = logs = "http://localhost:4576" }`, `skip_credentials_validation`, `skip_requesting_account_id`, `access_key = secret_key = "test"` | no `endpoints` block; region and the deploy role select the account |
 | Function env | nothing extra: LocalStack sets `AWS_ENDPOINT_URL` in its Lambda containers and factbus uses it (`FACTBUS_ENDPOINT_URL` overrides) | unset |
 | Proof | `make e2e` (see `examples/hello`) | the same example applied to a sandbox account |
 

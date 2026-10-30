@@ -55,10 +55,10 @@ The same steps by hand:
 ```bash
 tofu -chdir=examples/hello init
 tofu -chdir=examples/hello apply \
-  -var localstack_endpoint=http://localhost:4566 -var test_backoff_factor=0.01
-.venv/bin/python scripts/e2e_hello.py --endpoint http://localhost:4566
+  -var localstack_endpoint=http://localhost:4576 -var test_backoff_factor=0.01
+.venv/bin/python scripts/e2e_hello.py --endpoint http://localhost:4576
 tofu -chdir=examples/hello destroy \
-  -var localstack_endpoint=http://localhost:4566 -var test_backoff_factor=0.01
+  -var localstack_endpoint=http://localhost:4576 -var test_backoff_factor=0.01
 ```
 
 `test_backoff_factor` shrinks the retry waits (30 s, 2 m, 10 m, ...) so the poison event

@@ -11,9 +11,9 @@ docker compose up -d --wait          # LocalStack 3.8, PostgreSQL 16, MySQL 8.0
 
 ```bash
 .venv/bin/python -m pytest                                   # unit suite
-FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5442/factbus \
-FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3316/factbus \
-LOCALSTACK_ENDPOINT=http://localhost:4566 \
+FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5452/factbus \
+FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3326/factbus \
+LOCALSTACK_ENDPOINT=http://localhost:4576 \
 AWS_ACCESS_KEY_ID=test AWS_SECRET_ACCESS_KEY=test \
   .venv/bin/python -m pytest tests/integration               # real engines; fails, never skips, when one is missing
 PYTHON=$(uv python find 3.12) bash scripts/test_sqlalchemy_matrix.sh   # SQLAlchemy 1.4.36 and 2.0

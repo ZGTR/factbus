@@ -3,9 +3,9 @@
 URLs come from the environment. A missing URL FAILS the test, never skips it: a skipped
 engine reads as a green suite that never ran on that engine (A14).
 
-    FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5442/factbus
-    FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3316/factbus
-    LOCALSTACK_ENDPOINT=http://localhost:4566
+    FACTBUS_PG_URL=postgresql+psycopg://factbus:factbus@localhost:5452/factbus
+    FACTBUS_MYSQL_URL=mysql+pymysql://factbus:factbus@localhost:3326/factbus
+    LOCALSTACK_ENDPOINT=http://localhost:4576
 
 Start them with the repository's compose file: `docker compose up -d --wait`.
 """
