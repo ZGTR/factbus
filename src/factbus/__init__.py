@@ -46,6 +46,11 @@ def __getattr__(name: str) -> Any:
     module = _EXPORTS.get(name)
     if module is None:
         raise AttributeError(f"module 'factbus' has no attribute {name!r}")
-    value = getattr(import_module(module), name)
-    globals()[name] = value
-    return value
+    loaded = import_module(module)
+    # Importing `factbus.once` binds the submodule as `factbus.once`, over the function
+    # of that name. Bind every export of the module now, so the function wins whichever
+    # name was asked for first.
+    for export, home in _EXPORTS.items():
+        if home == module:
+            globals()[export] = getattr(loaded, export)
+    return globals()[name]
