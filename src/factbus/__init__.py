@@ -7,7 +7,9 @@ once; a side effect that must not repeat goes through `once`.
     from factbus import Event, SqlProducer, consumer, once
 
 The public names are imported lazily, so a DynamoDB-only consumer never imports
-SQLAlchemy. The layers underneath (`factbus.domain`, `factbus.application`,
+SQLAlchemy. The exception is `factbus.once`, which needs only the standard library: it
+loads with the package, so the `once` function is bound before anything can import the
+`factbus.once` submodule over it. The layers underneath (`factbus.domain`, `factbus.application`,
 `factbus.adapters`, `factbus.ports`) stay importable for composition roots that wire their
 own pieces.
 
@@ -19,6 +21,8 @@ from __future__ import annotations
 
 from importlib import import_module
 from typing import TYPE_CHECKING, Any
+
+from factbus.once import CertainlyNotSent, KeyReused, StillPending, Unknown, once
 
 __version__ = "0.1.0.dev0"
 
@@ -38,7 +42,6 @@ __all__ = sorted(_EXPORTS)
 if TYPE_CHECKING:
     from factbus.consumer_handler import consumer
     from factbus.envelope import Event
-    from factbus.once import CertainlyNotSent, KeyReused, StillPending, Unknown, once
     from factbus.sql_producer import SqlProducer
 
 
@@ -46,11 +49,6 @@ def __getattr__(name: str) -> Any:
     module = _EXPORTS.get(name)
     if module is None:
         raise AttributeError(f"module 'factbus' has no attribute {name!r}")
-    loaded = import_module(module)
-    # Importing `factbus.once` binds the submodule as `factbus.once`, over the function
-    # of that name. Bind every export of the module now, so the function wins whichever
-    # name was asked for first.
-    for export, home in _EXPORTS.items():
-        if home == module:
-            globals()[export] = getattr(loaded, export)
-    return globals()[name]
+    value = getattr(import_module(module), name)
+    globals()[name] = value
+    return value

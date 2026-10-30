@@ -22,6 +22,15 @@ def test_once_is_the_function_after_any_sibling_export(first):
     assert resolve_in_fresh_interpreter(first, "once") == "function"
 
 
+@pytest.mark.parametrize("first", ["import factbus.once", "from factbus.once import Unknown"])
+def test_once_is_the_function_after_the_submodule_is_imported_directly(first):
+    """Importing `factbus.once` binds the submodule over the package attribute before
+    `__getattr__` can run, so the function has to be bound when the package loads."""
+    script = f"{first}\nfrom factbus import once\nprint(type(once).__name__)"
+    result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
+    assert result.stdout.strip() == "function"
+
+
 def test_consumer_is_the_decorator_factory():
     assert resolve_in_fresh_interpreter("Event", "consumer") == "function"
 
