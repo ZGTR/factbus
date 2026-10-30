@@ -150,20 +150,25 @@ class SqlProducer:
         # the outer commit instead of dropping them to the sweep.
         if session.get_nested_transaction() is not None:
             return
-        staged = session.info.pop(self._staged_key, None)
-        if not staged or not self._publish_on_commit:
+        if not session.info.get(self._staged_key):
             return
         try:
             # A Session with per-model binds and no default bind raises here; the
             # write has committed, so that must not surface from `commit()`.
             bind = session.get_bind()
         except Exception:
-            log.exception("publish on commit deferred to the sweep")
-            self._metrics.count(PUBLISH_ERROR_METRIC)
+            session.info.pop(self._staged_key, None)
+            if self._publish_on_commit:
+                log.exception("publish on commit deferred to the sweep")
+                self._metrics.count(PUBLISH_ERROR_METRIC)
             return
+        # Another producer on another engine may share this table name, and so this
+        # staged key: leave its rows for its own listener.
         if getattr(bind, "engine", bind) is not self.engine:
             return
-        self.publish_committed(staged)
+        staged = session.info.pop(self._staged_key, None)
+        if staged and self._publish_on_commit:
+            self.publish_committed(staged)
 
     def _after_soft_rollback(self, session: Session, previous_transaction) -> None:
         """Forget staged rows only when the OUTERMOST transaction rolls back.

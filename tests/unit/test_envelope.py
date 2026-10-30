@@ -35,6 +35,14 @@ def test_event_reads_a_legacy_envelope():
     assert (event.id, event.type, event.source) == envelope_keys(legacy)
 
 
+def test_event_reads_a_legacy_envelope_that_carries_its_contract_in_specversion():
+    legacy = envelope(7, specversion="comms.event/v1")
+    event = Event.from_envelope(legacy)
+    assert (event.id, event.type, event.source) == envelope_keys(legacy)
+    assert "specversion" not in event.extensions
+    assert event.to_envelope()["specversion"] == "1.0"
+
+
 def test_event_ids_default_to_unique_uuids():
     assert Event(type="t", source="s").id != Event(type="t", source="s").id
 

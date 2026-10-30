@@ -87,7 +87,9 @@ class Event:
                 data=envelope.get("data") or {},
                 extensions={k: v for k, v in envelope.items() if k not in core},
             )
-        legacy_core = {"event_id", "type", "producer", "subject", "occurred_at", "data"}
+        # A legacy envelope may carry its own contract tag in `specversion` (for example
+        # `comms.event/v1`). It is not a CloudEvents version and not an extension.
+        legacy_core = {"specversion", "event_id", "type", "producer", "subject", "occurred_at", "data"}
         return cls(
             id=envelope["event_id"],
             type=envelope["type"],

@@ -151,6 +151,25 @@ def test_a_session_on_another_engine_is_ignored(world, tmp_path):
     assert bus.calls == []
 
 
+def test_a_producer_on_another_engine_leaves_this_producers_rows(world, tmp_path):
+    # Both producers use the default table name, so both listen for the same staged
+    # key. The one attached first must not take the other's rows.
+    _, first, first_bus, _ = world
+    engine = sqlite_engine(tmp_path / 'second.db')
+    clock, bus = ManualClock(), ScriptedBus()
+    second = SqlProducer(engine=engine, bus=bus, metrics=CountingMetrics(), clock=clock)
+    second.table.metadata.create_all(engine)
+    second.attach()
+    try:
+        with Session(engine) as session, session.begin():
+            second.stage(session, placed(1))
+        assert first_bus.calls == []
+        assert sent_ids(bus) == ["ord-1"]
+    finally:
+        second.detach()
+        engine.dispose()
+
+
 def test_attach_is_idempotent(world):
     engine, producer, bus, _ = world
     producer.attach()
